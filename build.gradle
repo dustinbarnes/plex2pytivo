@@ -1,0 +1,143 @@
+description = "Creates a pytivo metadata files based on the Plex metadata"
+    
+ext {
+    srcDbPath = '/Volumes/dustin/Library/Application Support/Plex Media Server/Plug-in Support/Databases/'
+    //srcDbPath = './'
+    dbFileName = 'com.plexapp.plugins.library.db'
+
+    dbFile = "$buildDir/$dbFileName"
+    mediaFile = "$buildDir/media.html"
+    staging = "$buildDir/staging"
+}
+
+defaultTasks 'transmogrify'
+
+task transmogrify(dependsOn: 'parse'){}
+
+task parse(dependsOn: 'db') {
+    inputs.file(mediaFile)
+
+    doLast {
+        def slurper = new XmlSlurper().parse(file(mediaFile))
+        def results = []
+        slurper.TR.each {
+            def thisItem = parseExtras(it.TD[0].text())
+            thisItem.file = it.TD[1].text()
+            thisItem.description = it.TD[2].text().replace("\r", "")
+            if ( thisItem.description.indexOf("\n") != -1 )
+                thisItem.description = thisItem.description.substring(0, thisItem.description.indexOf("\n"))
+            thisItem.year = it.TD[3].text()
+            thisItem.originalAirDate = it.TD[4].text()
+            thisItem.title = it.TD[5].text()
+
+            dealWith(thisItem)
+        }
+    }
+}
+
+task db(dependsOn: 'getDb', type: Exec) {
+    inputs.file(file(dbFile))
+    outputs.file(file(mediaFile))
+
+    executable = './transform.sh'
+}
+
+task getDb(dependsOn: 'prepare', type: Copy) {
+    from srcDbPath
+    into buildDir
+    include dbFileName
+}
+
+task prepare {
+    outputs.file(buildDir)
+    outputs.file(staging)
+
+    doLast {
+        buildDir.mkdirs()
+        file(staging).mkdirs()
+    }
+}
+
+task clean(type: Delete) {
+    delete buildDir
+}
+
+def dealWith(item) {
+    if ( item.episodic )
+        dealWithTv(item)
+    //else
+        //dealWithMovie(item)
+}
+
+def dealWithTv(item) {
+    def parts = file(item.file)
+    println parts.name
+    
+//{episode=10, episodic=1, season=7, 
+    //show=Trailer Park Boys, 
+    //file=/Volumes/Drobocop/TV Shows/Trailer Park Boys/2007 - Trailer Park Boys - Season 7/Trailer.Park.Boys.S07E10.A Shitriver Runs Through It.avi, description=When the boys find themselves in trouble with the authorities it is up to Ricky to bargain for a deal. But, someone has to go to jail. Who will take the fall?, year=2007, originalAirDate=2007-06-10 01:00:00}
+    def messageDigest = java.security.MessageDigest.getInstance("SHA1")
+    messageDigest.update( item.show.getBytes() );
+    def seriesId = "SH" + new BigInteger(1, messageDigest.digest()).toString(10).substring(0,6)
+    def originalAirDate = item.originalAirDate.replace(' ', 'T') + 'Z'
+    def episodeNumber = item.season + item.episode?.padLeft(2, '0')
+
+    def contents = """title : ${item.show}
+seriesTitle : ${item.show}
+episodeTitle: ${item.title}
+originalAirDate: ${originalAirDate}
+movieYear : ${item.year}
+isEpisode : true
+description : ${item.description}
+starRating : 3
+tvRating : NR
+episodeNumber : ${episodeNumber}
+seriesId : ${seriesId}
+"""
+
+    file("${parts.parent}/.meta/").mkdirs()
+    def dest = file("${parts.parent}/.meta/${parts.name}.txt")
+    dest.text = contents
+}
+
+def dealWithMovie(item) {
+    def contents = """title : ${item.name}
+seriesTitle : ${item.name}
+movieYear : ${item.year}
+isEpisode : false
+description : ${item.description}
+starRating : 3
+tvRating : NR
+"""
+    def parts = file(item.file)
+    println parts.name
+
+    file("${parts.parent}/.meta/").mkdirs()
+    def dest = file("${parts.parent}/.meta/${parts.name}.txt")
+    dest.text = contents
+}
+
+def parseExtras(extras) {
+    def parsed = [:]
+    extras.tokenize('&').each {
+        def pair = it.tokenize('=')
+        def value = URLDecoder.decode(pair[1])
+        parsed[pair[0]] = value
+    }
+    return parsed
+}
+
+/* SQL to get our data: 
+
+select
+  items.hints,
+  parts.file,
+  meta.summary,
+  meta.year,
+  meta.originally_available_at
+from 
+  media_items items 
+    join media_parts parts on (parts.media_item_id = items.id)
+    join metadata_items meta on (items.metadata_item_id = meta.id)
+
+*/
