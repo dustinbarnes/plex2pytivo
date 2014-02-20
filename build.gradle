@@ -1,8 +1,7 @@
 description = "Creates a pytivo metadata files based on the Plex metadata"
     
 ext {
-    srcDbPath = '/Volumes/dustin/Library/Application Support/Plex Media Server/Plug-in Support/Databases/'
-    //srcDbPath = './'
+    srcDbPath = "${user.home}/Library/Application Support/Plex Media Server/Plug-in Support/Databases/"
     dbFileName = 'com.plexapp.plugins.library.db'
 
     dbFile = "$buildDir/$dbFileName"
@@ -65,17 +64,14 @@ task clean(type: Delete) {
 def dealWith(item) {
     if ( item.episodic )
         dealWithTv(item)
-    //else
-        //dealWithMovie(item)
+    else
+        dealWithMovie(item)
 }
 
 def dealWithTv(item) {
     def parts = file(item.file)
     println parts.name
     
-//{episode=10, episodic=1, season=7, 
-    //show=Trailer Park Boys, 
-    //file=/Volumes/Drobocop/TV Shows/Trailer Park Boys/2007 - Trailer Park Boys - Season 7/Trailer.Park.Boys.S07E10.A Shitriver Runs Through It.avi, description=When the boys find themselves in trouble with the authorities it is up to Ricky to bargain for a deal. But, someone has to go to jail. Who will take the fall?, year=2007, originalAirDate=2007-06-10 01:00:00}
     def messageDigest = java.security.MessageDigest.getInstance("SHA1")
     messageDigest.update( item.show.getBytes() );
     def seriesId = "SH" + new BigInteger(1, messageDigest.digest()).toString(10).substring(0,6)
@@ -127,17 +123,3 @@ def parseExtras(extras) {
     return parsed
 }
 
-/* SQL to get our data: 
-
-select
-  items.hints,
-  parts.file,
-  meta.summary,
-  meta.year,
-  meta.originally_available_at
-from 
-  media_items items 
-    join media_parts parts on (parts.media_item_id = items.id)
-    join metadata_items meta on (items.metadata_item_id = meta.id)
-
-*/
